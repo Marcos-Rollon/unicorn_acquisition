@@ -1,48 +1,43 @@
-import socketio
-import eventlet
+from websocket_manager import WebsocketServerManager
+import asyncio
+from dummy_worker import Worker
 
-sio = socketio.Server(cors_allowed_origins="*")
-app = socketio.WSGIApp(sio)
+def on_new_value(value):
+    print(f"Received value from worker: {value}")
+    global server
+    asyncio.create_task(server.emit("worker_data", value))
 
-# Dictionary to store references to the spawned greenlets
-spawned_greenlets = {}
+def on_event(sid, data):
+    global worker 
+    if data is True:
+        print("Starting task...")
+        worker.start_acquisition(on_new_value)
+    elif data is False:
+        print("Stopping task...")
+        worker.stop_acquisition()
+    else:
+        pass
 
-def set_interval(uid, interval_seconds):
-    while True:
-        eventlet.sleep(interval_seconds)
-        print(uid)
-        sio.emit("eeg_data", "[1,2,3,4,5,6,7,8]", to=uid)
+async def main():
+    global server
+    global worker 
+    worker = Worker()
+    server = WebsocketServerManager(
+        on_connect=lambda sid: print(f"Client connected: {sid}"),
+        on_disconnect=lambda sid: print(f"Client disconnected: {sid}"),
+    )
+    server.add_listener("start_task", on_event)
+    await server.start()
+    try:
+        # Keep the program running until interrupted
+        while True:
+            await asyncio.sleep(0)
 
-@sio.on("data")
-def on_data(sid, data):
-    print("Data from ", sid)
-    print(data)
-    sio.emit("data", {'data': 'received'}, to=sid)
-
-@sio.on('*')
-def default_handler(event, sid, data):
-    print("Data to event name ", event)
-    print("From sid ", sid)
-    print("With data")
-    print(data)
-
-@sio.event
-def connect(sid, environ, auth):
-    print('connect ', sid)
-    # Start the set_interval function and store the reference to the spawned greenlet
-    spawned_greenlets[sid] = eventlet.spawn(set_interval, sid, 2)
-
-@sio.event
-def disconnect(sid):
-    print('disconnect ', sid)
-    # Kill the spawned greenlet if it exists
-    if sid in spawned_greenlets:
-        spawned_greenlets[sid].kill()
-        del spawned_greenlets[sid]
+    except KeyboardInterrupt:
+        # Handle Ctrl+C interruption
+        print("Server interrupted. Stopping...")
+        server.stop()
 
 
-def main():
-    eventlet.wsgi.server(eventlet.listen(('', 8000)), app)
-
-if __name__ == '__main__':
-    main()
+if __name__ == "__main__":
+    asyncio.run(main())
