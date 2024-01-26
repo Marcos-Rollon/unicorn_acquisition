@@ -37,11 +37,12 @@ class UnicornManager:
                 print("Cannot stop acquisition because there is no connected device")
             return
         if self._task is not None:
+            #self._connectedDevice.StopAcquisition()
             self._task.cancel()
             self._task = None
-        self._is_acquiring_data = False
-        self._connectedDevice.StopAcquisition()
-    async def start_acquisition(self,
+            del self._connectedDevice
+        
+    def start_acquisition(self,
                            callback : Callable[[[float]], None], 
                            test_signal_enabled : bool = False):
         """
